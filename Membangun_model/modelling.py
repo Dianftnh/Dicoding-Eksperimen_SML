@@ -6,12 +6,16 @@ Level: Basic — MLflow autolog.
 
 import os
 import pickle
+import logging
 import numpy as np
 import mlflow
 import mlflow.tensorflow
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Embedding, Bidirectional, LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "dataset_preprocessing"))
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "model_output")
@@ -27,15 +31,20 @@ RANDOM_SEED = 42
 
 
 def load_data():
-    X_train = np.load(os.path.join(DATA_DIR, "X_train.npy"))
-    X_val = np.load(os.path.join(DATA_DIR, "X_val.npy"))
-    X_test = np.load(os.path.join(DATA_DIR, "X_test.npy"))
-    y_train = np.load(os.path.join(DATA_DIR, "y_train.npy"))
-    y_val = np.load(os.path.join(DATA_DIR, "y_val.npy"))
-    y_test = np.load(os.path.join(DATA_DIR, "y_test.npy"))
-    with open(os.path.join(DATA_DIR, "label_encoder.pkl"), "rb") as f:
-        encoder = pickle.load(f)
-    return X_train, X_val, X_test, y_train, y_val, y_test, encoder
+    try:
+        X_train = np.load(os.path.join(DATA_DIR, "X_train.npy"))
+        X_val = np.load(os.path.join(DATA_DIR, "X_val.npy"))
+        X_test = np.load(os.path.join(DATA_DIR, "X_test.npy"))
+        y_train = np.load(os.path.join(DATA_DIR, "y_train.npy"))
+        y_val = np.load(os.path.join(DATA_DIR, "y_val.npy"))
+        y_test = np.load(os.path.join(DATA_DIR, "y_test.npy"))
+        with open(os.path.join(DATA_DIR, "label_encoder.pkl"), "rb") as f:
+            encoder = pickle.load(f)
+        logger.info("Data loaded successfully from %s", DATA_DIR)
+        return X_train, X_val, X_test, y_train, y_val, y_test, encoder
+    except FileNotFoundError as e:
+        logger.error("File not found: %s", e)
+        raise
 
 
 def build_model(num_classes=2):
@@ -60,8 +69,8 @@ def main():
 
     X_train, X_val, X_test, y_train, y_val, y_test, encoder = load_data()
     num_classes = len(encoder.classes_)
-    print(f"Train: {X_train.shape}, Val: {X_val.shape}, Test: {X_test.shape}")
-    print(f"Classes: {encoder.classes_}")
+    logger.info("Train: %s, Val: %s, Test: %s", X_train.shape, X_val.shape, X_test.shape)
+    logger.info("Classes: %s", encoder.classes_)
 
     model = build_model(num_classes)
 
@@ -85,12 +94,12 @@ def main():
         )
 
         loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
-        print(f"Test Accuracy: {accuracy:.4f}, Test Loss: {loss:.4f}")
+        logger.info("Test Accuracy: %.4f, Test Loss: %.4f", accuracy, loss)
 
         model.save(os.path.join(MODEL_DIR, "final_model.keras"))
-        print(f"Model saved to {MODEL_DIR}")
+        logger.info("Model saved to %s", MODEL_DIR)
 
-    print("Training completed. Check MLflow UI: mlflow ui")
+    logger.info("Training completed. Check MLflow UI: mlflow ui")
 
 
 if __name__ == "__main__":

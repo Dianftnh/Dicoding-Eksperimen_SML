@@ -1,10 +1,12 @@
 """
 modelling_tuning.py
 Hyperparameter tuning dengan manual logging MLflow (Skilled/Menengah).
+Menjalankan 3 kombinasi hyperparameter dan mencatat metrics secara manual.
 """
 
 import os
 import pickle
+import logging
 import numpy as np
 import mlflow
 import mlflow.tensorflow
@@ -15,6 +17,9 @@ from tensorflow.keras.optimizers import Adam
 from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 DATA_DIR = os.environ.get(
     "DATA_DIR",
@@ -33,15 +38,20 @@ mlflow.set_tracking_uri("mlruns")
 
 
 def load_data():
-    X_train = np.load(os.path.join(DATA_DIR, "X_train.npy"))
-    X_val = np.load(os.path.join(DATA_DIR, "X_val.npy"))
-    X_test = np.load(os.path.join(DATA_DIR, "X_test.npy"))
-    y_train = np.load(os.path.join(DATA_DIR, "y_train.npy"))
-    y_val = np.load(os.path.join(DATA_DIR, "y_val.npy"))
-    y_test = np.load(os.path.join(DATA_DIR, "y_test.npy"))
-    with open(os.path.join(DATA_DIR, "label_encoder.pkl"), "rb") as f:
-        encoder = pickle.load(f)
-    return X_train, X_val, X_test, y_train, y_val, y_test, encoder
+    try:
+        X_train = np.load(os.path.join(DATA_DIR, "X_train.npy"))
+        X_val = np.load(os.path.join(DATA_DIR, "X_val.npy"))
+        X_test = np.load(os.path.join(DATA_DIR, "X_test.npy"))
+        y_train = np.load(os.path.join(DATA_DIR, "y_train.npy"))
+        y_val = np.load(os.path.join(DATA_DIR, "y_val.npy"))
+        y_test = np.load(os.path.join(DATA_DIR, "y_test.npy"))
+        with open(os.path.join(DATA_DIR, "label_encoder.pkl"), "rb") as f:
+            encoder = pickle.load(f)
+        logger.info("Data loaded successfully from %s", DATA_DIR)
+        return X_train, X_val, X_test, y_train, y_val, y_test, encoder
+    except FileNotFoundError as e:
+        logger.error("File not found: %s", e)
+        raise
 
 
 def build_model(embedding_dim=128, lstm_units=64, learning_rate=1e-3, num_classes=2):
@@ -64,7 +74,9 @@ def build_model(embedding_dim=128, lstm_units=64, learning_rate=1e-3, num_classe
 def plot_confusion_matrix(y_true, y_pred, filepath):
     cm = confusion_matrix(y_true, y_pred)
     plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["Negatif", "Positif"], yticklabels=["Negatif", "Positif"])
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=["Negatif", "Positif"],
+                yticklabels=["Negatif", "Positif"])
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
     plt.title("Confusion Matrix")
@@ -74,7 +86,7 @@ def plot_confusion_matrix(y_true, y_pred, filepath):
 
 
 def train_and_log(params, X_train, y_train, X_val, y_val, X_test, y_test, run_name):
-    with mlflow.start_run(run_name=run_name):
+    with mlflow.start_run(run_name=run_name) as run:
         mlflow.log_params(params)
 
         model = build_model(
@@ -128,16 +140,18 @@ def train_and_log(params, X_train, y_train, X_val, y_val, X_test, y_test, run_na
         plot_confusion_matrix(y_test, y_pred, cm_path)
         mlflow.log_artifact(cm_path)
 
-        model.save(os.path.join(MODEL_DIR, f"model_{run_name}.keras"))
+        model_path = os.path.join(MODEL_DIR, f"model_{run_name}.keras")
+        model.save(model_path)
+        logger.info("Model saved: %s", model_path)
 
-        print(f"[{run_name}] Test Acc: {test_accuracy:.4f}, F1: {test_f1:.4f}")
+        logger.info("[%s] Test Acc: %.4f, F1: %.4f", run_name, test_accuracy, test_f1)
         return test_accuracy, model
 
 
 def main():
     X_train, X_val, X_test, y_train, y_val, y_test, encoder = load_data()
     num_classes = len(encoder.classes_)
-    print(f"Data loaded. Classes: {encoder.classes_}")
+    logger.info("Classes: %s", encoder.classes_)
 
     param_grid = [
         {"embedding_dim": 128, "lstm_units": 64, "learning_rate": 1e-3, "num_classes": num_classes, "batch_size": 64, "epochs": EPOCHS},
@@ -155,8 +169,8 @@ def main():
             best_acc = acc
             best_run = run_name
 
-    print(f"\nBest run: {best_run} with test accuracy: {best_acc:.4f}")
-    print("Check MLflow UI: mlflow ui")
+    logger.info("Best run: %s with test accuracy: %.4f", best_run, best_acc)
+    logger.info("Check MLflow UI: mlflow ui")
 
 
 if __name__ == "__main__":
